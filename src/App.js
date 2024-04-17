@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 //ระบุ type แหละ name ในการสร้างปุ่ม
@@ -16,31 +16,24 @@ const items = [
   { type: 'Vegetable', name: 'Carrot' }
 ];
 
+//ประกาศฟังก์ชัน TodoList ภายในนี้จะมีการใช้ useState เพื่อเก็บสถานะของรายการที่ต้องทำ (todoItems), 
+//รายการผลไม้ (fruitItems), และรายการผัก (vegetableItems) โดยเริ่มต้นทั้งสามกับรายการที่กำหนดใน items
 const TodoList = () => {
   const [todoItems, setTodoItems] = useState(items);
   const [fruitItems, setFruitItems] = useState([]);
   const [vegetableItems, setVegetableItems] = useState([]);
+  const timeoutRefs = useRef({});
 
-    useEffect(() => {
-    const timeoutIds = [];
-    const handleTimeouts = (items, setter) => {
-      items.forEach((item, index) => {
-        const timeoutId = setTimeout(() => {
-          setter((prevItems) => prevItems.filter((prevItem) => prevItem !== item));
-          setTodoItems((prevItems) => [...prevItems, item]);
-        }, 5000 * (index + 1)); 
-        timeoutIds.push(timeoutId);
-      });
-    };
-    handleTimeouts(fruitItems, setFruitItems);
-    handleTimeouts(vegetableItems, setVegetableItems);
+//ใช้ useEffect เพื่อทำความสะอาด timeout ทุกครั้งที่คอมโพเนนต์ถูก unmount ออกจาก DOM เพื่อป้องกันการรั่วความจำ
+  useEffect(() => {
     return () => {
-      timeoutIds.forEach((timeoutId) => clearTimeout(timeoutId));
+      Object.values(timeoutRefs.current).forEach((timeoutId) => clearTimeout(timeoutId));
     };
-  }, [fruitItems, vegetableItems]);
-  
-  //ฟังก์ชันให้รายการย้ายไปยังคอลัมย่อย (Fruit หรือ Vegetable) กลับมายังคอลัมหลัก (Todo) หลังจากผ่านไป 5 วินาที
-  const moveItem = (item) => {
+  }, []);
+
+//ประกาศฟังก์ชัน moveItem ที่ใช้ในการเลือกรายการที่ต้องทำและย้ายไปยังรายการผลไม้หรือรายการผัก 
+//โดยใช้ setTimeout เพื่อกำหนดเวลาในการย้าย และใช้ useRef เพื่อเก็บการอ้างอิงไปยัง timeout แต่ละตัวเพื่อให้สามารถยกเลิกได้
+  const moveItem = (item, timeout) => {
     const newItem = { ...item };
     if (newItem.type === 'Fruit') {
       setFruitItems((prevItems) => [...prevItems, newItem]);
@@ -48,38 +41,44 @@ const TodoList = () => {
       setVegetableItems((prevItems) => [...prevItems, newItem]);
     }
     setTodoItems((prevItems) => prevItems.filter((prevItem) => prevItem !== item));
-    setTimeout(() => {
-      setTodoItems((prevItems) => [...prevItems, newItem]);
+    const timeoutId = setTimeout(() => {
+      if (!fruitItems.includes(newItem) && !vegetableItems.includes(newItem)) {
+        setTodoItems((prevItems) => [...prevItems, newItem]);
+      }
       if (newItem.type === 'Fruit') {
         setFruitItems((prevItems) => prevItems.filter((prevItem) => prevItem !== newItem));
       } else if (newItem.type === 'Vegetable') {
         setVegetableItems((prevItems) => prevItems.filter((prevItem) => prevItem !== newItem));
       }
-    }, 5000);
+      timeoutRefs.current[item.name] = undefined;
+    }, timeout);
+    timeoutRefs.current[item.name] = timeoutId;
   };
-  
-  //ช้สำหรับย้ายรายการกลับไปยังคอลัมหลัก (Todo) จากคอลัมย่อย (Fruit หรือ Vegetable) 
-  //โดยตรวจสอบก่อนว่ารายการนั้นๆ ยังไม่มีในรายการหลักแล้วก่อนหรือไม่
+
+//ประกาศฟังก์ชัน moveBack ที่ใช้ในการย้ายรายการกลับไปยังรายการที่ต้องทำ โดยยกเลิก timeout ถ้ามีการเรียกใช้ฟังก์ชันนี้
   const moveBack = (item, columnType) => {
     const newItem = { ...item };
-    const isItemInTodo = todoItems.some(todoItem => 
-      todoItem.type === newItem.type && todoItem.name === newItem.name
-    );
+    const isItemInTodo = todoItems.some((todoItem) => todoItem.type === newItem.type && todoItem.name === newItem.name);
     if (!isItemInTodo) {
-      setTodoItems(prevItems => [...prevItems, newItem]);
+      setTodoItems((prevItems) => [...prevItems, newItem]);
     }
     if (columnType === 'fruitColumn') {
-      setFruitItems(prevItems => prevItems.filter(prevItem => prevItem !== item));
+      setFruitItems((prevItems) => prevItems.filter((prevItem) => prevItem !== item));
     } else if (columnType === 'vegetableColumn') {
-      setVegetableItems(prevItems => prevItems.filter(prevItem => prevItem !== item));
+      setVegetableItems((prevItems) => prevItems.filter((prevItem) => prevItem !== item));
+    }
+    const timeoutId = timeoutRefs.current[item.name];
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutRefs.current[item.name] = undefined;
     }
   };
-  
+
   return (
     <div className="container">
       <div className="column" id="todoColumn">
         {todoItems.map((item, index) => (
-          <button className="button" key={index} id={item.name} name={item.name} onClick={() => moveItem(item)}>
+          <button className="button" key={index} onClick={() => moveItem(item, 5000)}>
             {item.name}
           </button>
         ))}
@@ -89,7 +88,7 @@ const TodoList = () => {
           <h1 style={{ margin: '1px' }}>Fruit</h1>
         </div>
         {fruitItems.map((item, index) => (
-          <button className="button" key={index} id={item.name} name={item.name} onClick={() => moveBack(item, 'fruitColumn')}>
+          <button className="button" key={index} onClick={() => moveBack(item, 'fruitColumn')}>
             {item.name}
           </button>
         ))}
@@ -99,7 +98,7 @@ const TodoList = () => {
           <h1 style={{ margin: '1px' }}>Vegetable</h1>
         </div>
         {vegetableItems.map((item, index) => (
-          <button className="button" key={index} id={item.name} name={item.name} onClick={() => moveBack(item, 'vegetableColumn')}>
+          <button className="button" key={index} onClick={() => moveBack(item, 'vegetableColumn')}>
             {item.name}
           </button>
         ))}
